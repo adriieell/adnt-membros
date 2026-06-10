@@ -347,7 +347,7 @@ tbody tr:hover td{background:var(--lighter)}
           onfocus="this.style.borderColor='#C0392B'" onblur="this.style.borderColor='#e8e4dc'">
       </div>
       <div id="login-err" style="font-size:12px;color:#C0392B;min-height:16px"></div>
-      <button id="login-btn" onclick="doLogin()"
+      <button id="login-btn" id="login-btn-submit"
         style="width:100%;height:42px;background:#C0392B;color:white;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif;transition:background .15s;margin-top:4px"
         onmouseover="this.style.background='#922B21'" onmouseout="this.style.background='#C0392B'">
         Entrar
@@ -979,13 +979,13 @@ import { getFirestore, collection, doc,
 
 // ── CONFIG (preencha com suas credenciais) ──────────────────────
 const FIREBASE_CONFIG = {
-  apiKey: "AIzaSyAedbqHF-MB64BTGT9dGorhgwIoVCH7Nl8",
-    authDomain: "adnt-membros.firebaseapp.com",
-    projectId: "adnt-membros",
-    storageBucket: "adnt-membros.firebasestorage.app",
-    messagingSenderId: "544367362301",
-    appId: "1:544367362301:web:d144e9ad9e806f752ebe94"
-  };
+  apiKey:            "COLE_AQUI_apiKey",
+  authDomain:        "COLE_AQUI.firebaseapp.com",
+  projectId:         "COLE_AQUI_projectId",
+  storageBucket:     "COLE_AQUI.appspot.com",
+  messagingSenderId: "COLE_AQUI_messagingSenderId",
+  appId:             "COLE_AQUI_appId"
+};
 
 const fbApp  = initializeApp(FIREBASE_CONFIG);
 const auth   = getAuth(fbApp);
@@ -1022,6 +1022,22 @@ async function doLogin() {
   }
 }
 window.doLogin = doLogin;
+
+// Conectar botão de login (evita problema de escopo com type=module)
+document.addEventListener('DOMContentLoaded', () => {
+  const btn = document.getElementById('login-btn-submit');
+  if (btn) btn.addEventListener('click', doLogin);
+  const passInput = document.getElementById('login-pass');
+  if (passInput) passInput.addEventListener('keydown', e => { if(e.key==='Enter') doLogin(); });
+});
+// Fallback imediato caso DOMContentLoaded já tenha disparado
+setTimeout(() => {
+  const btn = document.getElementById('login-btn-submit');
+  if (btn && !btn._hasLoginListener) {
+    btn.addEventListener('click', doLogin);
+    btn._hasLoginListener = true;
+  }
+}, 100);
 
 document.getElementById('login-pass')?.addEventListener('keydown', e => {
   if (e.key === 'Enter') doLogin();
@@ -1296,15 +1312,8 @@ function filterList(q) { return MEMBERS.filter(m=>!q||(m.nome||'').toLowerCase()
 
 // CREDENCIAL
 let msFilter='';
-function renderMS(){buildMSList('ms-list',filterList(msFilter),selMember?MEMBERS.indexOf(selMember):null,'selMS');}
-function filterMS(q){msFilter=q;renderMS();}
-function selMS(idx){
-  selMember=MEMBERS[idx];renderMS();
-  document.getElementById('cred-lbl').innerHTML=`<strong>${cap(selMember.nome)}</strong> · ${selMember.cargo||'Membro'} · ${selMember.congregacao||''}`;
-  document.getElementById('btn-imprimir').disabled=false;
-  document.getElementById('btn-salvar').disabled=false;
-  renderCredencial(selMember);
-}
+// renderMS movida para módulo de credencial
+
 
 // FICHA
 let msFilter2='';
@@ -2922,6 +2931,35 @@ window.exportarDados = function() {
   _origExportarDados();
   showToast('Backup salvo! Os dados também estão no Firebase. ☁️');
 };
+
+
+// ═══════════════════════════════════════════════════════════════
+// EXPOR FUNÇÕES GLOBAIS (necessário com type=module)
+// ═══════════════════════════════════════════════════════════════
+const _globalFns = {
+  goScreen, nav: goScreen, switchTab, openDTab, openModal, closeModal,
+  renderTable, verMembro, credMembro, fichaMembro, irFicha, irCredencial,
+  salvarMembro, excluirMembro, confirmarExclusao,
+  renderCredencial, selMS, selMS2, selMS3, selMS4,
+  filterMS, filterMS2, filterMS3, filterMS4,
+  toggleSelMembro, toggleTodosCred, setLayout, resetFields,
+  changeFontSize, setFotoRadius, ajustarFoto, moverFoto,
+  trocarFotoCred, trocarFotoMembro, salvarCampoFicha,
+  imprimirCred, salvarPNG, imprimirLote, imprimirFicha,
+  imprimirTransf, imprimirDecl, renderTransf, renderDecl,
+  gerarRel, gerarRelHTML, exportarDados, exportarCSV, importarDados,
+  trocarLogo, editCfg, saveCfg, addCong, removeCong,
+  addCargo, removeCargo, addUsuario, aplicarCFG,
+  novoRegistroCeia, criarRegistroCeia, carregarRegistroCeia,
+  setCeiaStatus, setCeiaJustif, setCeiaObs,
+  marcarTodosPresente, limparTodosCeia, salvarCeiaRegistro,
+  imprimirListaCeia, renderCeiaTable,
+  doLogout,
+};
+Object.entries(_globalFns).forEach(([name, fn]) => {
+  if (typeof fn === 'function') window[name] = fn;
+});
+console.log('✅ Funções globais expostas:', Object.keys(_globalFns).length);
 
 </script>
 </body>
