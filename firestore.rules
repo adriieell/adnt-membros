@@ -1,0 +1,36 @@
+// ═══════════════════════════════════════════════════════════════
+// REGRAS DE SEGURANÇA DO FIRESTORE
+// Cole estas regras em: Firebase Console → Firestore → Rules
+// ═══════════════════════════════════════════════════════════════
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Apenas usuários autenticados acessam tudo
+    function isAuth() {
+      return request.auth != null;
+    }
+
+    // Membros
+    match /membros/{membroId} {
+      allow read, write: if isAuth();
+    }
+
+    // Santa Ceia
+    match /ceia/{ceiaId} {
+      allow read, write: if isAuth();
+    }
+
+    // Configurações da igreja
+    match /config/{configId} {
+      allow read, write: if isAuth();
+    }
+
+    // Usuários do sistema
+    match /usuarios/{userId} {
+      allow read: if isAuth();
+      allow write: if isAuth() && request.auth.uid == userId;
+    }
+  }
+}
