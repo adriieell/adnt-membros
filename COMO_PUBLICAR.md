@@ -1,4 +1,4 @@
-# 🚀 Como Publicar o Sistema AD Novo Tempo
+# 🚀 Como Publicar o Sistema AD  Novo Tempo
 **Tempo estimado: 20–30 minutos**
 
 ---
