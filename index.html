@@ -2861,66 +2861,158 @@ initCeia();
 document.getElementById('cfg-total').textContent = MEMBERS.length + ' membros';
 
 
-// ── PATCH: salvarMembro → salva no Firestore + localStorage ────
+
+// ═══════════════════════════════════════════════════════════════
+// SINCRONIZAÇÃO FIREBASE — Firestore é a fonte principal
+// localStorage é apenas cache local de sessão
+// ═══════════════════════════════════════════════════════════════
+
+// ── PATCH: salvarMembro → Firestore primeiro ─────────────────
 const _origSalvar = salvarMembro;
 window.salvarMembro = async function() {
-  // Capturar novo membro antes de salvar
   const nome = document.getElementById('fn')?.value?.trim();
   if (!nome) { showToast('Informe o nome do membro!','err'); return; }
-  _origSalvar(); // roda o original (add ao array MEMBERS)
-  // Salvar o último membro adicionado no Firestore
-  const ultimo = MEMBERS[MEMBERS.length - 1];
+
+  // 1. Adicionar ao array local via função original
+  _origSalvar();
+  const novo = MEMBERS[MEMBERS.length - 1];
+
+  // 2. Salvar no Firestore (fonte principal)
   try {
-    const id = await window._saveMemberToCloud(ultimo);
-    ultimo._firestoreId = id;
+    showLoadingOverlay('Salvando membro...');
+    const id = await saveMemberFirestore(novo);
+    novo._firestoreId = id;
+    hideLoadingOverlay();
     showToast('Membro salvo na nuvem! ☁️');
-  } catch(e) { console.error('Cloud save error:', e); showToast('Salvo localmente (nuvem offline)', 'warn'); }
-};
-
-// ── PATCH: confirmarExclusao → deleta do Firestore ─────────────
-const _origExcluir = window.confirmarExclusao;
-window.confirmarExclusao = async function() {
-  const m = selMember2;
-  if (_origExcluir) _origExcluir();
-  else {
-    if (window._modalExcluir) window._modalExcluir.remove();
-    if (!selMember2) return;
-    const idx = MEMBERS.indexOf(selMember2);
-    if (idx !== -1) MEMBERS.splice(idx, 1);
-    selMember2 = null;
-    salvarLocalStorage(); initHome(); renderTable(); renderMS2();
-    document.getElementById('ficha-display').innerHTML = '<div class="cred-empty"><div class="cred-empty-ico">📋</div><div class="cred-empty-txt">Membro excluído.</div></div>';
+  } catch(e) {
+    hideLoadingOverlay();
+    console.error('Firestore save error:', e);
+    showToast('Erro ao salvar na nuvem: ' + e.message, 'err');
   }
-  try { if (m) await window._deleteMemberFromCloud(m); } catch(e) { console.warn('Delete cloud error:', e); }
 };
 
-// ── PATCH: salvarCeiaLS → também salva no Firestore ────────────
+// ── PATCH: confirmarExclusao → deleta do Firestore ───────────
+window.confirmarExclusao = async function() {
+  if (window._modalExcluir) window._modalExcluir.remove();
+  if (!selMember2) return;
+  const m = selMember2;
+  const nome = cap(m.nome || '');
+  const idx = MEMBERS.indexOf(m);
+  if (idx !== -1) MEMBERS.splice(idx, 1);
+  selMember2 = null;
+
+  // Atualizar UI
+  renderTable(); renderMS2(); initHome();
+  document.getElementById('ficha-display').innerHTML =
+    '<div class="cred-empty"><div class="cred-empty-ico">📋</div><div class="cred-empty-txt">Membro excluído.</div></div>';
+  const bpf = document.getElementById('btn-print-ficha'); if(bpf) bpf.disabled=true;
+  const bef = document.getElementById('btn-excluir-ficha'); if(bef){bef.disabled=true;bef.style.opacity='.4';}
+
+  // Deletar do Firestore
+  try {
+    await deleteMemberFirestore(m);
+    showToast(nome + ' excluído com sucesso.');
+  } catch(e) {
+    console.error('Firestore delete error:', e);
+    showToast('Excluído localmente, erro na nuvem: ' + e.message, 'warn');
+  }
+};
+
+// ── PATCH: salvarCampoFicha → atualiza no Firestore ──────────
+const _origSalvarCampo = salvarCampoFicha;
+window.salvarCampoFicha = async function(el) {
+  _origSalvarCampo(el); // atualiza array local
+  const idx = parseInt(el.dataset.idx);
+  if (isNaN(idx)) return;
+  const m = MEMBERS[idx];
+  if (!m) return;
+  try {
+    await saveMemberFirestore(m);
+  } catch(e) {
+    console.error('Firestore update error:', e);
+  }
+};
+
+// ── PATCH: trocarFotoMembro → atualiza no Firestore ──────────
+const _origTrocarFoto = trocarFotoMembro;
+window.trocarFotoMembro = function(e, idx) {
+  const file = e.target.files[0]; if (!file) return;
+  const r = new FileReader();
+  r.onload = async ev => {
+    MEMBERS[idx]._foto = ev.target.result;
+    // Atualizar UI
+    const box = document.getElementById('ficha-foto-box');
+    if (box) {
+      box.innerHTML = `<img src="${ev.target.result}" style="width:100%;height:100%;object-fit:cover;border-radius:5px">
+        <div style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.5);color:white;font-size:8px;text-align:center;padding:2px;border-radius:0 0 5px 5px">📷 Trocar</div>`;
+      box.onclick = () => document.getElementById(`ficha-foto-input-${idx}`).click();
+    }
+    // Salvar no Firestore
+    try {
+      await saveMemberFirestore(MEMBERS[idx]);
+      showToast('Foto atualizada na nuvem! ☁️');
+    } catch(e) {
+      console.error('Foto cloud error:', e);
+      showToast('Foto salva localmente.', 'warn');
+    }
+  };
+  r.readAsDataURL(file);
+  e.target.value = '';
+};
+
+// ── PATCH: salvarCeiaLS → também salva no Firestore ──────────
 const _origSalvarCeiaLS = salvarCeiaLS;
 window.salvarCeiaLS = function() {
-  _origSalvarCeiaLS();
-  if (ceiaAtual) window._saveCeiaToCloud(ceiaAtual).catch(e => console.warn('Ceia cloud error:', e));
+  _origSalvarCeiaLS(); // salva no localStorage
+  if (ceiaAtual) {
+    saveCeiaFirestore(ceiaAtual).catch(e => console.warn('Ceia cloud error:', e));
+  }
 };
 
-// ── PATCH: saveCfg → também salva config no Firestore ──────────
+// ── PATCH: saveCfg → também salva config no Firestore ────────
 const _origSaveCfg = saveCfg;
 window.saveCfg = function() {
   _origSaveCfg();
-  window._saveConfigToCloud().catch(e => console.warn('Config cloud error:', e));
+  saveConfigFirestore().catch(e => console.warn('Config cloud error:', e));
 };
 
-// ── PATCH: exportarDados → incluir aviso sobre nuvem ───────────
+// ── PATCH: exportarDados → exporta do Firestore ──────────────
 const _origExportarDados = exportarDados;
 window.exportarDados = function() {
   _origExportarDados();
-  showToast('Backup salvo! Os dados também estão no Firebase. ☁️');
+  showToast('Backup salvo! Dados sincronizados com Firebase. ☁️');
 };
 
+// ── SINCRONIZAÇÃO EM TEMPO REAL (onSnapshot) ─────────────────
+// Atualiza MEMBERS automaticamente quando outro usuário faz alterações
+function iniciarSyncTempoReal() {
+  try {
+    onSnapshot(collection(db, 'membros'), snap => {
+      const novos = snap.docs.map(d => ({ ...d.data(), _firestoreId: d.id }));
+      if (novos.length > 0 || snap.metadata.hasPendingWrites === false) {
+        MEMBERS = novos;
+        renderTable();
+        initHome();
+        document.getElementById('cfg-total').textContent = MEMBERS.length + ' membros';
+        console.log(`🔄 Sync: ${MEMBERS.length} membros`);
+      }
+    });
 
-// ═══════════════════════════════════════════════════════════════
-// EXPOR FUNÇÕES GLOBAIS (necessário com type=module)
-// ═══════════════════════════════════════════════════════════════
+    onSnapshot(collection(db, 'ceia'), snap => {
+      snap.docs.forEach(d => { CEIA_DATA[d.id] = d.data(); });
+      if (typeof renderCeiaTable === 'function' && ceiaAtual) renderCeiaTable();
+      console.log(`🔄 Sync ceia: ${snap.size} registros`);
+    });
+
+    console.log('✅ Sincronização em tempo real ativada');
+  } catch(e) {
+    console.warn('Sync tempo real error:', e);
+  }
+}
+
+// ── EXPOR FUNÇÕES GLOBAIS ────────────────────────────────────
 const _globalFns = {
-  goScreen, nav: goScreen, switchTab, openDTab, openModal, closeModal,
+  goScreen, switchTab, openDTab, openModal, closeModal,
   renderTable, verMembro, credMembro, fichaMembro, irFicha, irCredencial,
   salvarMembro, excluirMembro, confirmarExclusao,
   renderCredencial, selMS, selMS2, selMS3, selMS4,
@@ -2936,13 +3028,15 @@ const _globalFns = {
   novoRegistroCeia, criarRegistroCeia, carregarRegistroCeia,
   setCeiaStatus, setCeiaJustif, setCeiaObs,
   marcarTodosPresente, limparTodosCeia, salvarCeiaRegistro,
-  imprimirListaCeia, renderCeiaTable,
-  doLogout,
+  imprimirListaCeia, renderCeiaTable, doLogout,
 };
 Object.entries(_globalFns).forEach(([name, fn]) => {
   if (typeof fn === 'function') window[name] = fn;
 });
-console.log('✅ Funções globais expostas:', Object.keys(_globalFns).length);
+
+// Iniciar sync em tempo real após login
+iniciarSyncTempoReal();
+console.log('✅ Sistema AD Novo Tempo iniciado — Firebase ativo');
 
 </script>
 </body>
