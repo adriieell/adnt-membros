@@ -1,4 +1,4 @@
-<!DOCTYPE html> 
+<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
@@ -1054,11 +1054,19 @@ window.doLogout = doLogout;
 async function bootstrapApp() {
   showLoadingOverlay('Carregando dados do Firebase...');
   try {
+    // Aguardar token de autenticação estar pronto
+    const user = auth.currentUser;
+    if (!user) throw new Error('Usuário não autenticado');
+    
+    // Forçar refresh do token para garantir que está válido
+    await user.getIdToken(true);
+    console.log('✅ Token de auth válido, carregando dados...');
+    
     await Promise.all([loadMembers(), loadCeia(), loadConfig()]);
-    console.log('✅ Dados carregados do Firestore');
+    console.log('✅ Dados carregados do Firestore: ' + MEMBERS.length + ' membros');
   } catch(e) {
     console.error('Bootstrap error:', e);
-    showToast('Erro ao carregar dados: ' + e.message, 'err');
+    showToast('Erro ao carregar: ' + e.message, 'err');
   }
   hideLoadingOverlay();
   aplicarCFG();
@@ -1067,15 +1075,22 @@ async function bootstrapApp() {
   openDTab('credencial');
   initCeia();
   document.getElementById('cfg-total').textContent = MEMBERS.length + ' membros';
-  // Iniciar sync em tempo real APÓS login confirmado
-  iniciarSyncTempoReal();
+  // Iniciar sync APÓS dados carregados e token validado
+  setTimeout(() => iniciarSyncTempoReal(), 500);
 }
 
 // ── FIRESTORE — MEMBROS ─────────────────────────────────────────
 async function loadMembers() {
-  const snap = await getDocs(query(collection(db, 'membros'), orderBy('nome')));
-  MEMBERS = snap.docs.map(d => ({ ...d.data(), _firestoreId: d.id }));
-  console.log(`✅ ${MEMBERS.length} membros carregados`);
+  try {
+    const snap = await getDocs(query(collection(db, 'membros'), orderBy('nome')));
+    MEMBERS = snap.docs.map(d => ({ ...d.data(), _firestoreId: d.id }));
+    console.log(`✅ ${MEMBERS.length} membros carregados do Firestore`);
+  } catch(e) {
+    console.error('loadMembers error:', e.code, e.message);
+    // Se não tem dados no Firestore, MEMBERS fica vazio (não usa localStorage)
+    MEMBERS = [];
+    throw e;
+  }
 }
 
 // Salvar membro individual (create ou update)
@@ -1125,10 +1140,15 @@ async function deleteMemberFirestore(m) {
 
 // ── FIRESTORE — CEIA ────────────────────────────────────────────
 async function loadCeia() {
-  const snap = await getDocs(collection(db, 'ceia'));
-  CEIA_DATA = {};
-  snap.docs.forEach(d => { CEIA_DATA[d.id] = d.data(); });
-  console.log(`✅ ${snap.size} registros de ceia carregados`);
+  try {
+    const snap = await getDocs(collection(db, 'ceia'));
+    CEIA_DATA = {};
+    snap.docs.forEach(d => { CEIA_DATA[d.id] = d.data(); });
+    console.log(`✅ ${snap.size} registros de ceia carregados`);
+  } catch(e) {
+    console.error('loadCeia error:', e.code, e.message);
+    CEIA_DATA = {};
+  }
 }
 
 async function saveCeiaFirestore(mes) {
@@ -1138,9 +1158,13 @@ async function saveCeiaFirestore(mes) {
 
 // ── FIRESTORE — CONFIG ──────────────────────────────────────────
 async function loadConfig() {
-  const snap = await getDoc(doc(db, 'config', 'geral'));
-  if (snap.exists()) Object.assign(CFG, snap.data());
-  console.log('✅ Config carregada');
+  try {
+    const snap = await getDoc(doc(db, 'config', 'geral'));
+    if (snap.exists()) Object.assign(CFG, snap.data());
+    console.log('✅ Config carregada');
+  } catch(e) {
+    console.error('loadConfig error:', e.code, e.message);
+  }
 }
 
 async function saveConfigFirestore() {
