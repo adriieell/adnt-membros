@@ -1052,20 +1052,23 @@ window.doLogout = doLogout;
 
 // ── BOOTSTRAP ───────────────────────────────────────────────────
 async function bootstrapApp() {
-  showLoadingOverlay('Carregando dados...');
+  showLoadingOverlay('Carregando dados do Firebase...');
   try {
     await Promise.all([loadMembers(), loadCeia(), loadConfig()]);
+    console.log('✅ Dados carregados do Firestore');
   } catch(e) {
     console.error('Bootstrap error:', e);
+    showToast('Erro ao carregar dados: ' + e.message, 'err');
   }
   hideLoadingOverlay();
-  carregarLocalStorage(); // fallback config local
   aplicarCFG();
   initHome();
   renderTable();
   openDTab('credencial');
   initCeia();
   document.getElementById('cfg-total').textContent = MEMBERS.length + ' membros';
+  // Iniciar sync em tempo real APÓS login confirmado
+  iniciarSyncTempoReal();
 }
 
 // ── FIRESTORE — MEMBROS ─────────────────────────────────────────
@@ -3034,8 +3037,7 @@ Object.entries(_globalFns).forEach(([name, fn]) => {
   if (typeof fn === 'function') window[name] = fn;
 });
 
-// Iniciar sync em tempo real após login
-iniciarSyncTempoReal();
+// sync iniciado dentro do bootstrapApp após login
 console.log('✅ Sistema AD Novo Tempo iniciado — Firebase ativo');
 
 </script>
